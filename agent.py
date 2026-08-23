@@ -1,8 +1,11 @@
+from datetime import datetime
+
 from tools import (
     get_case_details,
     get_resident_details,
     get_documents,
     check_eligibility,
+    check_certificate,
     update_case_status,
     send_notification,
     ACTION_LOG,
@@ -20,6 +23,21 @@ class CaseworkerAgent:
     def __init__(self):
         self.pending_approvals = {}
 
+    def triage_cases(self):
+        """Run the read-only checks for every case that still needs work."""
+        results = []
+        for case in self._pending_cases():
+            result = self.process_case(case["case_id"])
+            if "error" not in result:
+                results.append(self._triage_summary(result))
+        return results
+
+    def pending_approval_list(self):
+        return [
+            {"approval_id": approval_id, **approval}
+            for approval_id, approval in self.pending_approvals.items()
+        ]
+
     def process_case(self, case_id):
         case = get_case_details(case_id)
         if not case:
@@ -28,16 +46,23 @@ class CaseworkerAgent:
         resident = get_resident_details(case["resident_id"])
         documents = get_documents(case_id)
         eligibility = check_eligibility(case_id)
+        certificate = check_certificate(case_id)
 
         actions = [
             "Read case details",
             "Read resident details",
             "Check submitted documents",
             "Check eligibility",
+            "Verify certificate presence and originality",
         ]
 
         # Safe action: prepare a status change but do not submit it.
-        proposed_status = "ready_for_review" if eligibility["eligible"] and documents["complete"] else "needs_attention"
+        proposed_status = "ready_for_review" if (
+            eligibility["eligible"]
+            and documents["complete"]
+            and certificate["present"]
+            and certificate["original"]
+        ) else "needs_attention"
 
         approval_id = f"APR-{case_id}"
         self.pending_approvals[approval_id] = {
@@ -51,14 +76,39 @@ class CaseworkerAgent:
             "resident": resident,
             "documents": documents,
             "eligibility": eligibility,
+            "certificate": certificate,
             "actions_completed": actions,
             "proposed_action": {
                 "approval_id": approval_id,
                 "type": "update_case_status",
                 "new_status": proposed_status,
-                "reason": self._reason(documents, eligibility),
+                "reason": self._reason(documents, eligibility, certificate),
                 "requires_human_approval": True,
             },
+        }
+
+    @staticmethod
+    def _pending_cases():
+        from tools import CASES
+        return [case for case in CASES if case["status"] == "pending"]
+
+    @staticmethod
+    def _triage_summary(result):
+        documents = result["documents"]
+        eligibility = result["eligibility"]
+        return {
+            "case": result["case"],
+            "resident": result["resident"],
+            "documents": documents,
+            "certificate": result["certificate"],
+            "eligibility": eligibility,
+            "priority": "high" if (
+                not documents["complete"]
+                or not eligibility["eligible"]
+                or not result["certificate"]["present"]
+                or not result["certificate"]["original"]
+            ) else "normal",
+            "recommendation": result["proposed_action"],
         }
 
     def resolve_approval(self, approval_id, approved):
@@ -68,6 +118,7 @@ class CaseworkerAgent:
 
         if not approved:
             ACTION_LOG.append({
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "event": "human_rejected",
                 "approval_id": approval_id,
                 "case_id": approval["case_id"],
@@ -85,6 +136,7 @@ class CaseworkerAgent:
         # Example of a second high-impact action:
         # In a real system, sending an official notice would also require approval.
         ACTION_LOG.append({
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
             "event": "human_approved",
             "approval_id": approval_id,
             "case_id": approval["case_id"],
@@ -98,9 +150,16 @@ class CaseworkerAgent:
         }
 
     @staticmethod
-    def _reason(documents, eligibility):
+    def _reason(documents, eligibility, certificate):
+        reasons = []
         if not documents["complete"]:
-            return "Some required documents are missing."
+            reasons.append("Some required documents are missing")
         if not eligibility["eligible"]:
-            return "The eligibility check did not pass."
-        return "Required documents are complete and the eligibility check passed."
+            reasons.append("The eligibility check did not pass")
+        if not certificate["present"]:
+            reasons.append("The required certificate was not submitted")
+        elif not certificate["original"]:
+            reasons.append("The submitted certificate could not be verified as original")
+        if reasons:
+            return ". ".join(reasons) + "."
+        return "Required documents, eligibility, and certificate verification passed."

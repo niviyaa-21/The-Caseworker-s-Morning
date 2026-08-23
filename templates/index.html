@@ -9,42 +9,137 @@
 <body>
 <div class="container">
     <header>
-        <p class="eyebrow">AGENTIC AI • HUMAN-IN-THE-LOOP</p>
-        <h1>Caseworker Morning Assistant</h1>
+        <div class="brand-line"><span class="brand-mark">CM</span><span>Casework operations</span></div>
+        <p class="eyebrow">MORNING CONTROL DESK</p>
+        <h1>Good morning, caseworker.</h1>
         <p class="subtitle">
-            Automate repetitive case checks while requiring human approval
-            for high-impact actions.
+            Start the queue, review the evidence, and keep every consequential decision in human hands.
         </p>
+        <div class="toolbar">
+            <button class="primary" onclick="triageAll()">Run morning triage</button>
+            <span id="queueStatus" class="queue-status">Ready to review</span>
+        </div>
     </header>
 
-    <section class="card">
-        <h2>1. Select a pending case</h2>
-        <div class="case-grid">
+    <nav class="tabs" aria-label="Dashboard views">
+        <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
+        <button class="tab" data-tab="all-cases" onclick="showTab('all-cases')">All cases</button>
+    </nav>
+
+    <section id="overview" class="tab-panel">
+    <section class="metrics" aria-label="Case summary">
+        <div class="metric"><span class="metric-label">Total cases</span><strong id="totalCount">0</strong><small>in the case register</small></div>
+        <div class="metric"><span class="metric-label">Pending</span><strong id="pendingCount">0</strong><small>awaiting review</small></div>
+        <div class="metric metric-alert"><span class="metric-label">Needs attention</span><strong id="attentionCount">0</strong><small>issues to resolve</small></div>
+        <div class="metric metric-complete"><span class="metric-label">Completed</span><strong id="completedCount">0</strong><small>finished cases</small></div>
+    </section>
+
+    <main class="dashboard-grid">
+    <section class="card queue-card">
+        <div class="section-heading">
+            <div><p class="eyebrow">WORK QUEUE</p><h2>Cases needing attention</h2></div>
+            <span id="caseCount" class="count">0 cases</span>
+        </div>
+        <div id="caseGrid" class="case-grid">
             {% for case in cases %}
-            <button class="case" onclick="runAgent('{{ case.case_id }}')">
+            {% if case.status != 'completed' %}
+            <button class="case" data-case-id="{{ case.case_id }}" onclick="runAgent('{{ case.case_id }}')">
                 <strong>Case #{{ case.case_id }}</strong>
                 <span>{{ case.program }}</span>
-                <small>Status: {{ case.status }}</small>
+                <small class="case-status">Status: {{ case.status }}</small>
             </button>
+            {% endif %}
             {% endfor %}
         </div>
     </section>
 
     <section id="result" class="card hidden">
-        <h2>Agent activity</h2>
+        <div class="section-heading"><div><p class="eyebrow">CASE BRIEF</p><h2>Agent activity</h2></div><span class="live-dot">LIVE</span></div>
         <div id="summary"></div>
         <div id="checks"></div>
         <div id="approval"></div>
     </section>
+    </main>
 
-    <section class="card">
+    <section class="lower-grid">
+        <section class="card chart-card">
+            <div class="section-heading"><div><p class="eyebrow">PORTFOLIO</p><h2>Completion rate</h2></div><span id="completionRate" class="count">0%</span></div>
+            <div class="chart-layout"><div id="completionChart" class="pie-chart" role="img" aria-label="Completion chart"></div><div id="chartLegend" class="chart-legend"></div></div>
+        </section>
+        <section class="card recent-card">
+            <div class="section-heading"><div><p class="eyebrow">ACTIVITY</p><h2>Recent cases</h2></div><span id="lastScan" class="count">Not scanned</span></div>
+            <div class="table-wrap"><table><thead><tr><th>Case</th><th>Resident</th><th>Program</th><th>Status</th></tr></thead><tbody id="recentCases"></tbody></table></div>
+        </section>
+    </section>
+    </section>
+
+    <section id="all-cases" class="tab-panel hidden">
+        <section class="card all-cases-card">
+            <div class="section-heading"><div><p class="eyebrow">CASE REGISTER</p><h2>All cases</h2></div><span id="allCaseCount" class="count">0 cases</span></div>
+            <div class="table-wrap"><table><thead><tr><th>Case</th><th>Resident</th><th>Program</th><th>Status</th><th>Action</th></tr></thead><tbody id="allCases"></tbody></table></div>
+        </section>
+    </section>
+
+    <section class="card audit-card">
         <h2>Audit log</h2>
+        <p class="muted">Every read, recommendation, and human decision is recorded here.</p>
         <button class="secondary" onclick="loadLogs()">Refresh log</button>
         <pre id="logs">Click refresh to load events.</pre>
     </section>
 </div>
 
 <script>
+document.addEventListener("DOMContentLoaded", loadDashboard);
+
+async function loadDashboard() {
+    await loadCases();
+    loadLogs();
+}
+
+function statusLabel(status) {
+    return status.replaceAll("_", " ");
+}
+
+function statusBadge(status) {
+    return `<span class="status-badge status-${status}">${statusLabel(status)}</span>`;
+}
+
+function renderCaseRows(cases, targetId, includeAction) {
+    document.getElementById(targetId).innerHTML = cases.map(item => `
+        <tr>
+            <td><strong>#${item.case_id}</strong></td>
+            <td>${item.resident_name || "-"}</td>
+            <td>${item.program}</td>
+            <td>${statusBadge(item.status)}</td>
+            ${includeAction ? `<td><button class="table-action" onclick="runAgent('${item.case_id}')">Review</button></td>` : ""}
+        </tr>
+    `).join("");
+}
+
+function updateMetrics(cases) {
+    const counts = {
+        total: cases.length,
+        pending: cases.filter(item => item.status === "pending").length,
+        attention: cases.filter(item => item.status === "needs_attention").length,
+        completed: cases.filter(item => item.status === "completed").length
+    };
+    document.getElementById("totalCount").textContent = counts.total;
+    document.getElementById("pendingCount").textContent = counts.pending;
+    document.getElementById("attentionCount").textContent = counts.attention;
+    document.getElementById("completedCount").textContent = counts.completed;
+    const completionRate = counts.total ? Math.round(counts.completed / counts.total * 100) : 0;
+    document.getElementById("completionRate").textContent = `${completionRate}%`;
+    document.getElementById("completionChart").style.background = `conic-gradient(#176b3a 0 ${completionRate}%, #d26b38 ${completionRate}% 100%)`;
+    document.getElementById("chartLegend").innerHTML = `
+        <div><span class="legend-dot completed-dot"></span>Completed <strong>${counts.completed}</strong></div>
+        <div><span class="legend-dot open-dot"></span>Open cases <strong>${counts.total - counts.completed}</strong></div>`;
+}
+
+function showTab(tabId) {
+    document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.toggle("hidden", panel.id !== tabId));
+    document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.tab === tabId));
+}
+
 async function runAgent(caseId) {
     const resultBox = document.getElementById("result");
     resultBox.classList.remove("hidden");
@@ -52,6 +147,7 @@ async function runAgent(caseId) {
     document.getElementById("checks").innerHTML = "";
     document.getElementById("approval").innerHTML = "";
 
+    setQueueStatus("Checking case evidence...");
     const response = await fetch("/api/run", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
@@ -65,6 +161,8 @@ async function runAgent(caseId) {
             `<p class="error">${data.error}</p>`;
         return;
     }
+
+    setQueueStatus("Review ready");
 
     document.getElementById("summary").innerHTML = `
         <div class="summary">
@@ -80,8 +178,23 @@ async function runAgent(caseId) {
         </ul>
         <p><strong>Documents:</strong>
             ${data.documents.submitted}/${data.documents.required} submitted</p>
+        <ul class="document-list">
+            ${data.documents.items.map(document => `
+                <li class="${document.submitted ? "document-submitted" : "document-missing"}">
+                    <span>${document.submitted ? "✓" : "!"}</span>
+                    <strong>${document.name}</strong>
+                    <small>${document.submitted ? "Submitted" : "Not submitted"}</small>
+                </li>
+            `).join("")}
+        </ul>
         <p><strong>Eligibility:</strong>
             ${data.eligibility.eligible ? "Passed" : "Did not pass"}</p>
+        <div class="certificate-check">
+            <p><strong>Certificate:</strong> ${data.certificate.present ? "Submitted" : "Not submitted"}</p>
+            <p><strong>Originality:</strong> ${data.certificate.present ? (data.certificate.original ? "Verified original" : "Could not verify as original") : "Not applicable"}</p>
+            <p><strong>Verification:</strong> ${data.certificate.verification_method}</p>
+            <small>${data.certificate.reason}</small>
+        </div>
     `;
 
     const action = data.proposed_action;
@@ -121,6 +234,55 @@ async function resolveApproval(approvalId, approved) {
     `;
 
     loadLogs();
+    loadCases();
+    setQueueStatus(approved ? "Decision recorded" : "Proposal rejected");
+}
+
+async function triageAll() {
+    setQueueStatus("Running read-only checks...");
+    const response = await fetch("/api/triage", {method: "POST"});
+    const data = await response.json();
+    if (!response.ok) {
+        setQueueStatus("Triage could not run");
+        return;
+    }
+    const highPriority = data.cases.filter(item => item.priority === "high").length;
+    const originalCertificates = data.cases.filter(item => item.certificate.present && item.certificate.original).length;
+    document.getElementById("attentionCount").textContent = highPriority;
+    document.getElementById("lastScan").textContent = new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+    document.getElementById("summary").innerHTML = `
+        <div class="summary">
+            <strong>${data.cases.length} cases checked</strong>
+            <span>${highPriority} high-priority review${highPriority === 1 ? "" : "s"} flagged</span>
+        </div>`;
+    document.getElementById("checks").innerHTML = `
+        <h3>Queue recommendations</h3>
+        <ul>${data.cases.map(item => `<li><strong>Case #${item.case.case_id}</strong> · ${item.priority} priority · ${item.recommendation.new_status}</li>`).join("")}</ul>
+        <p>Choose a case above to inspect its evidence and approve or reject its proposed status.</p>`;
+    document.getElementById("approval").innerHTML = "";
+    document.getElementById("result").classList.remove("hidden");
+    setQueueStatus(`${data.cases.length} cases checked`);
+    loadCases();
+    loadLogs();
+}
+
+async function loadCases() {
+    const response = await fetch("/api/cases");
+    const cases = await response.json();
+    updateMetrics(cases);
+    const openCases = cases.filter(item => item.status !== "completed");
+    document.getElementById("caseCount").textContent = `${openCases.length} cases`;
+    document.getElementById("allCaseCount").textContent = `${cases.length} cases`;
+    renderCaseRows(cases.slice().reverse().slice(0, 5), "recentCases", false);
+    renderCaseRows(cases, "allCases", true);
+    cases.forEach(item => {
+        const card = document.querySelector(`[data-case-id="${item.case_id}"]`);
+        if (card) card.querySelector(".case-status").textContent = `Status: ${item.status}`;
+    });
+}
+
+function setQueueStatus(message) {
+    document.getElementById("queueStatus").textContent = message;
 }
 
 async function loadLogs() {

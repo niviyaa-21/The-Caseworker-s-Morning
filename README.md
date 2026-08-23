@@ -26,6 +26,9 @@ This project implements:
 4. **Human approval** – changing a case status requires explicit approval.
 5. **Audit logging** – important actions are recorded.
 6. **Simple dashboard** – a caseworker can run the agent and approve/reject the proposed action.
+7. **Morning triage** – run read-only checks across the whole pending queue and sort findings by priority.
+8. **Live queue state** – the dashboard updates case status and exposes pending approval requests through the API.
+9. **Certificate verification** – each case is checked for certificate presence and whether its issuing reference appears original.
 
 > This is a demonstration system using mock data. It is not suitable for real benefits decisions or production use.
 
@@ -227,6 +230,25 @@ Set `approved` to `false` to reject.
 ```http
 GET /api/logs
 ```
+
+### Run morning triage
+
+```http
+POST /api/triage
+```
+
+This checks every case with `pending` status and returns a recommendation, priority, evidence summary, and pending approval list.
+
+Certificate results include `present`, `original`, `verification_method`, and an explanation. A missing or unverified certificate prevents the agent from recommending `ready_for_review`.
+
+### View live cases and approvals
+
+```http
+GET /api/cases
+GET /api/approvals
+```
+
+Approval payloads must contain a real JSON boolean for `approved`; invalid requests are rejected with `400`.
 
 ## 9. How to turn this into a real AI agent
 
