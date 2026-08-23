@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caseworker AI Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <header>
+        <p class="eyebrow">AGENTIC AI • HUMAN-IN-THE-LOOP</p>
+        <h1>Caseworker Morning Assistant</h1>
+        <p class="subtitle">
+            Automate repetitive case checks while requiring human approval
+            for high-impact actions.
+        </p>
+    </header>
+
+    <section class="card">
+        <h2>1. Select a pending case</h2>
+        <div class="case-grid">
+            {% for case in cases %}
+            <button class="case" onclick="runAgent('{{ case.case_id }}')">
+                <strong>Case #{{ case.case_id }}</strong>
+                <span>{{ case.program }}</span>
+                <small>Status: {{ case.status }}</small>
+            </button>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section id="result" class="card hidden">
+        <h2>Agent activity</h2>
+        <div id="summary"></div>
+        <div id="checks"></div>
+        <div id="approval"></div>
+    </section>
+
+    <section class="card">
+        <h2>Audit log</h2>
+        <button class="secondary" onclick="loadLogs()">Refresh log</button>
+        <pre id="logs">Click refresh to load events.</pre>
+    </section>
+</div>
+
+<script>
+async function runAgent(caseId) {
+    const resultBox = document.getElementById("result");
+    resultBox.classList.remove("hidden");
+    document.getElementById("summary").innerHTML = "<p>Agent is processing the case...</p>";
+    document.getElementById("checks").innerHTML = "";
+    document.getElementById("approval").innerHTML = "";
+
+    const response = await fetch("/api/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({case_id: caseId})
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+        document.getElementById("summary").innerHTML =
+            `<p class="error">${data.error}</p>`;
+        return;
+    }
+
+    document.getElementById("summary").innerHTML = `
+        <div class="summary">
+            <strong>${data.resident.name}</strong>
+            <span>${data.case.program} • Case #${data.case.case_id}</span>
+        </div>
+    `;
+
+    document.getElementById("checks").innerHTML = `
+        <h3>Completed automatically</h3>
+        <ul>
+            ${data.actions_completed.map(x => `<li>✓ ${x}</li>`).join("")}
+        </ul>
+        <p><strong>Documents:</strong>
+            ${data.documents.submitted}/${data.documents.required} submitted</p>
+        <p><strong>Eligibility:</strong>
+            ${data.eligibility.eligible ? "Passed" : "Did not pass"}</p>
+    `;
+
+    const action = data.proposed_action;
+
+    document.getElementById("approval").innerHTML = `
+        <div class="approval">
+            <span class="warning">⚠ HUMAN APPROVAL REQUIRED</span>
+            <h3>Update case status to: ${action.new_status}</h3>
+            <p>${action.reason}</p>
+            <button class="approve" onclick="resolveApproval('${action.approval_id}', true)">
+                Approve
+            </button>
+            <button class="reject" onclick="resolveApproval('${action.approval_id}', false)">
+                Reject
+            </button>
+        </div>
+    `;
+}
+
+async function resolveApproval(approvalId, approved) {
+    const response = await fetch("/api/approval", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            approval_id: approvalId,
+            approved: approved
+        })
+    });
+
+    const data = await response.json();
+
+    document.getElementById("approval").innerHTML = `
+        <div class="${approved ? "success" : "rejected"}">
+            <strong>${data.message}</strong>
+            ${data.result ? `<p>New status: ${data.result.new_status}</p>` : ""}
+        </div>
+    `;
+
+    loadLogs();
+}
+
+async function loadLogs() {
+    const response = await fetch("/api/logs");
+    const logs = await response.json();
+    document.getElementById("logs").textContent =
+        JSON.stringify(logs, null, 2);
+}
+</script>
+</body>
+</html>
