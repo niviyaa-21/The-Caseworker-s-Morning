@@ -3,7 +3,7 @@ import os
 
 from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 from agent import CaseworkerAgent
-from tools import CASES, ACTION_LOG, RESIDENTS, PROGRAM_REQUIREMENTS, create_case
+from tools import CASES, ACTION_LOG, RESIDENTS, PROGRAM_REQUIREMENTS, create_case, record_certificate_submission
 from database import store
 
 app = Flask(__name__)
@@ -80,7 +80,8 @@ def add_case():
     submitted_documents = data.get("submitted_documents", [])
     if not isinstance(fields, dict) or not isinstance(submitted_documents, list):
         return jsonify({"error": "fields must be an object and submitted_documents must be a list"}), 400
-    allowed_documents = PROGRAM_REQUIREMENTS[program]["documents"]
+    requirements = PROGRAM_REQUIREMENTS[program]
+    allowed_documents = requirements["documents"] + requirements.get("optional_documents", [])
     if any(document not in allowed_documents for document in submitted_documents):
         return jsonify({"error": "One or more submitted documents are not required for this program"}), 400
     case = create_case(*(data[field].strip() for field in required), fields, submitted_documents)
@@ -95,6 +96,15 @@ def run_agent():
 
     result = agent.process_case(case_id)
     return jsonify(result)
+
+@app.post("/api/cases/<case_id>/certificate")
+def submit_certificate(case_id):
+    data = request.get_json(silent=True) or {}
+    certificate_type = data.get("certificate_type") or data.get("filename")
+    certificate = record_certificate_submission(case_id, certificate_type)
+    if certificate is None:
+        return jsonify({"error": f"Case {case_id} not found"}), 404
+    return jsonify(certificate)
 
 @app.post("/api/triage")
 def triage():

@@ -60,6 +60,7 @@ async function loadCase() {
             <p><strong>Originality:</strong> ${data.certificate.present ? (data.certificate.original ? "Verified original" : "Could not verify as original") : "Not applicable"}</p>
             <p><strong>Verification:</strong> ${data.certificate.verification_method}</p>
             <small>${data.certificate.reason}</small>
+            ${!data.certificate.present ? `<div class="certificate-upload"><label>Upload certificate<input id="certificateFile" type="file" accept=".pdf,.png,.jpg,.jpeg" onchange="updateCertificateName(this)"></label><small id="certificateName">No file selected</small><button type="button" onclick="submitCertificate()">Record submitted certificate</button><small id="certificateMessage"></small></div>` : ""}
         </div>`;
 
     const action = data.proposed_action;
@@ -69,6 +70,31 @@ async function loadCase() {
             <button class="approve" onclick="resolveApproval('${action.approval_id}', true)">Approve</button>
             <button class="reject" onclick="resolveApproval('${action.approval_id}', false)">Reject</button>
         </div>`;
+}
+
+function updateCertificateName(input) {
+    document.getElementById("certificateName").textContent = input.files.length ? input.files[0].name : "No file selected";
+}
+
+async function submitCertificate() {
+    const message = document.getElementById("certificateMessage");
+    const file = document.getElementById("certificateFile").files[0];
+    if (!file) {
+        message.textContent = "Select the submitted certificate first.";
+        return;
+    }
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/certificate`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({certificate_type: file.name, filename: file.name})
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        message.textContent = data.error || "Unable to record certificate.";
+        return;
+    }
+    message.textContent = "Certificate recorded. Refreshing review...";
+    await loadCase();
 }
 
 async function resolveApproval(approvalId, approved) {

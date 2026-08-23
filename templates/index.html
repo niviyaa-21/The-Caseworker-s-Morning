@@ -159,7 +159,7 @@ async function loadRequirements(program) {
     const response = await fetch("/api/program-requirements");
     const requirements = (await response.json())[program];
     fields.innerHTML = `<h3>Required case fields</h3>${requirements.fields.map(field => `<label>${field}<input name="field_${field}" required></label>`).join("")}`;
-    documents.innerHTML = `<h3>Required documents</h3><p class="muted">Choose a file to mark a document as submitted. Files are represented in this demo by their filename.</p>${requirements.documents.map((document, index) => `<label class="document-upload"><input type="file" data-document="${document}" onchange="markDocument(this)"><span class="upload-name">${document}</span><small class="upload-status">Not submitted</small></label>`).join("")}`;
+    documents.innerHTML = `<h3>Required documents</h3><p class="muted">Choose a file to mark a document as submitted. Files are represented in this demo by their filename.</p>${requirements.documents.map(document => `<label class="document-upload"><input type="file" data-document="${document}" onchange="markDocument(this)"><span class="upload-name">${document}</span><small class="upload-status">Not submitted</small></label>`).join("")}<h3>Optional certificate</h3>${(requirements.optional_documents || []).map(document => `<label class="document-upload"><input type="file" data-document="${document}" onchange="markDocument(this)"><span class="upload-name">${document}</span><small class="upload-status">Not submitted</small></label>`).join("")}`;
 }
 
 function markDocument(input) {

@@ -121,22 +121,27 @@ PROGRAM_REQUIREMENTS = {
     "Housing Assistance": {
         "fields": ["Monthly household income", "Household size"],
         "documents": ["Proof of identity", "Proof of address", "Income statement"],
+        "optional_documents": ["Housing eligibility certificate"],
     },
     "Food Assistance": {
         "fields": ["Monthly household income", "Household size"],
         "documents": ["Proof of identity", "Proof of address", "Income statement"],
+        "optional_documents": ["Food eligibility certificate"],
     },
     "Childcare Assistance": {
         "fields": ["Monthly household income", "Number of children", "Childcare provider"],
         "documents": ["Proof of identity", "Childcare cost certificate", "Child enrollment record"],
+        "optional_documents": [],
     },
     "Energy Assistance": {
         "fields": ["Monthly household income", "Service address"],
         "documents": ["Proof of identity", "Proof of address", "Energy bill statement"],
+        "optional_documents": ["Energy eligibility certificate"],
     },
     "Transport Assistance": {
         "fields": ["Monthly household income", "Transport need"],
         "documents": ["Proof of identity", "Proof of address", "Transport need statement"],
+        "optional_documents": ["Transport eligibility certificate"],
     },
 }
 
@@ -192,12 +197,13 @@ def create_case(name, program, language, contact, fields=None, submitted_documen
         "reason": "Eligibility has not been reviewed yet.",
     }
     store.save_eligibility(case_id, ELIGIBILITY[case_id])
+    certificate_present = any("certificate" in document.lower() for document in submitted_documents)
     CERTIFICATES[case_id] = {
-        "present": any("certificate" in document.lower() for document in submitted_documents),
+        "present": certificate_present,
         "original": False,
         "certificate_type": f"{program} certificate",
-        "verification_method": "Not checked",
-        "reason": "No certificate was submitted.",
+        "verification_method": "Pending human verification" if certificate_present else "Not checked",
+        "reason": "Certificate submitted; originality requires human verification." if certificate_present else "No certificate was submitted.",
     }
     store.save_certificate(case_id, CERTIFICATES[case_id])
     _log("case_created", case_id=case_id, resident_id=resident_id, program=program)
@@ -241,6 +247,23 @@ def check_certificate(case_id):
         present=certificate["present"],
         original=certificate["original"],
     )
+    return dict(certificate)
+
+
+def record_certificate_submission(case_id, certificate_type=None):
+    certificate = CERTIFICATES.get(case_id)
+    if certificate is None:
+        return None
+
+    certificate = dict(certificate)
+    certificate["present"] = True
+    certificate["original"] = False
+    certificate["certificate_type"] = certificate_type or certificate["certificate_type"]
+    certificate["verification_method"] = "Pending human verification"
+    certificate["reason"] = "Certificate submitted; originality requires human verification."
+    CERTIFICATES[case_id] = certificate
+    store.save_certificate(case_id, certificate)
+    _log("certificate_submitted", case_id=case_id, certificate_type=certificate["certificate_type"])
     return dict(certificate)
 
 
