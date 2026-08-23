@@ -1,13 +1,56 @@
-from flask import Flask, render_template, request, jsonify
+import hmac
+import os
+
+from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 from agent import CaseworkerAgent
 from tools import CASES, ACTION_LOG, RESIDENTS, PROGRAM_REQUIREMENTS, create_case
+from database import store
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "development-secret-change-this")
 agent = CaseworkerAgent()
+
+CASEWORKER_USERNAME = os.getenv("CASEWORKER_USERNAME", "caseworker")
+CASEWORKER_PASSWORD = os.getenv("CASEWORKER_PASSWORD", "change-me-now")
+
+
+@app.before_request
+def require_caseworker():
+    public_endpoints = {"login", "static"}
+    if request.endpoint in public_endpoints:
+        return None
+    if not session.get("caseworker_authenticated"):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Caseworker login required"}), 401
+        return redirect(url_for("login", next=request.path))
+    return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if hmac.compare_digest(username, CASEWORKER_USERNAME) and hmac.compare_digest(password, CASEWORKER_PASSWORD):
+            session.clear()
+            session["caseworker_authenticated"] = True
+            return redirect(request.args.get("next") or url_for("index"))
+        return render_template("login.html", error="Invalid caseworker credentials."), 401
+    return render_template("login.html", error=None)
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 @app.route("/")
 def index():
-    return render_template("index.html", cases=CASES, programs=PROGRAM_REQUIREMENTS)
+    return render_template("index.html", cases=CASES, programs=PROGRAM_REQUIREMENTS, database_connected=store.connected)
+
+@app.get("/api/health")
+def health():
+    return jsonify({"authenticated": True, "database": "connected" if store.connected else "unavailable"})
 
 @app.get("/api/cases")
 def cases():

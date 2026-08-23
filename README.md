@@ -33,6 +33,8 @@ This project implements:
 11. **Dedicated case view** – selecting a case opens its evidence and approval workflow in a new browser tab.
 12. **Case creation** – authorized dashboard users can create a pending case from a modal, select a benefit program, complete program-specific fields, and mark documents as submitted.
 13. **Program requirements** – a predefined requirements registry determines the fields and documents shown for each benefit program.
+14. **Restricted access** – the dashboard and APIs require the caseworker login.
+15. **MongoDB persistence** – case, resident, evidence, and audit data are stored in MongoDB when configured.
 
 > This is a demonstration system using mock data. It is not suitable for real benefits decisions or production use.
 
@@ -153,6 +155,21 @@ http://127.0.0.1:5000
 ```
 
 ## 7. How to demonstrate it
+
+### Configure MongoDB and login
+
+Install and run MongoDB locally, or provide a MongoDB Atlas connection string. Set these environment variables before starting the app:
+
+```powershell
+$env:MONGO_URI = "mongodb://127.0.0.1:27017"
+$env:MONGO_DB = "caseworker_morning"
+$env:FLASK_SECRET_KEY = "replace-with-a-long-random-value"
+$env:CASEWORKER_USERNAME = "caseworker"
+$env:CASEWORKER_PASSWORD = "replace-with-a-strong-password"
+python app.py
+```
+
+The database and collections are created automatically on first successful connection. The initial demo data is seeded only when the database has no cases. If MongoDB is unavailable, the app reports the database as unavailable and uses temporary in-memory data for development; do not use that mode for real resident data.
 
 ### Demo 1 – Successful case
 

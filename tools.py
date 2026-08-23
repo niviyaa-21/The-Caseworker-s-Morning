@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from database import store
+
 # -------------------------------------------------------------------
 # Mock data layer
 # Replace these dictionaries/functions with real APIs in production.
@@ -138,13 +140,17 @@ PROGRAM_REQUIREMENTS = {
     },
 }
 
+store.seed_or_load(CASES, RESIDENTS, DOCUMENTS, ELIGIBILITY, CERTIFICATES)
+
 
 def _log(event, **details):
-    ACTION_LOG.append({
+    entry = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "event": event,
         **details,
-    })
+    }
+    ACTION_LOG.append(entry)
+    store.log(entry)
 
 
 def get_case_details(case_id):
@@ -171,6 +177,7 @@ def create_case(name, program, language, contact, fields=None, submitted_documen
         "status": "pending",
         "fields": fields or {},
     })
+    store.save_resident(resident_id, RESIDENTS[resident_id])
     items = [{"name": document, "submitted": document in submitted_documents} for document in requirements["documents"]]
     DOCUMENTS[case_id] = {
         "required": len(items),
@@ -178,10 +185,13 @@ def create_case(name, program, language, contact, fields=None, submitted_documen
         "complete": all(item["submitted"] for item in items),
         "items": items,
     }
+    store.save_case(CASES[-1])
+    store.save_documents(case_id, DOCUMENTS[case_id])
     ELIGIBILITY[case_id] = {
         "eligible": False,
         "reason": "Eligibility has not been reviewed yet.",
     }
+    store.save_eligibility(case_id, ELIGIBILITY[case_id])
     CERTIFICATES[case_id] = {
         "present": any("certificate" in document.lower() for document in submitted_documents),
         "original": False,
@@ -189,6 +199,7 @@ def create_case(name, program, language, contact, fields=None, submitted_documen
         "verification_method": "Not checked",
         "reason": "No certificate was submitted.",
     }
+    store.save_certificate(case_id, CERTIFICATES[case_id])
     _log("case_created", case_id=case_id, resident_id=resident_id, program=program)
     return dict(CASES[-1])
 
@@ -241,6 +252,7 @@ def update_case_status(case_id, new_status):
 
     old_status = case["status"]
     case["status"] = new_status
+    store.save_case(case)
 
     _log(
         "case_status_changed",

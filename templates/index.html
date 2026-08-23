@@ -19,6 +19,7 @@
             <button class="primary" onclick="triageAll()">Run morning triage</button>
             <button class="secondary" onclick="toggleCreateCase(true)">+ Create case</button>
             <span id="queueStatus" class="queue-status">Ready to review</span>
+            <form method="post" action="{{ url_for('logout') }}"><button class="logout-button" type="submit">Sign out</button></form>
         </div>
     </header>
 
