@@ -115,6 +115,29 @@ CERTIFICATES = {
 
 ACTION_LOG = []
 
+PROGRAM_REQUIREMENTS = {
+    "Housing Assistance": {
+        "fields": ["Monthly household income", "Household size"],
+        "documents": ["Proof of identity", "Proof of address", "Income statement"],
+    },
+    "Food Assistance": {
+        "fields": ["Monthly household income", "Household size"],
+        "documents": ["Proof of identity", "Proof of address", "Income statement"],
+    },
+    "Childcare Assistance": {
+        "fields": ["Monthly household income", "Number of children", "Childcare provider"],
+        "documents": ["Proof of identity", "Childcare cost certificate", "Child enrollment record"],
+    },
+    "Energy Assistance": {
+        "fields": ["Monthly household income", "Service address"],
+        "documents": ["Proof of identity", "Proof of address", "Energy bill statement"],
+    },
+    "Transport Assistance": {
+        "fields": ["Monthly household income", "Transport need"],
+        "documents": ["Proof of identity", "Proof of address", "Transport need statement"],
+    },
+}
+
 
 def _log(event, **details):
     ACTION_LOG.append({
@@ -128,6 +151,46 @@ def get_case_details(case_id):
     case = next((c for c in CASES if c["case_id"] == case_id), None)
     _log("read_case", case_id=case_id, found=bool(case))
     return dict(case) if case else None
+
+
+def create_case(name, program, language, contact, fields=None, submitted_documents=None):
+    requirements = PROGRAM_REQUIREMENTS[program]
+    submitted_documents = submitted_documents or []
+    next_number = max((int(case["case_id"]) for case in CASES), default=1000) + 1
+    case_id = str(next_number)
+    resident_id = f"R{next_number:03d}"
+    RESIDENTS[resident_id] = {
+        "name": name,
+        "language": language,
+        "contact": contact,
+    }
+    CASES.append({
+        "case_id": case_id,
+        "resident_id": resident_id,
+        "program": program,
+        "status": "pending",
+        "fields": fields or {},
+    })
+    items = [{"name": document, "submitted": document in submitted_documents} for document in requirements["documents"]]
+    DOCUMENTS[case_id] = {
+        "required": len(items),
+        "submitted": sum(item["submitted"] for item in items),
+        "complete": all(item["submitted"] for item in items),
+        "items": items,
+    }
+    ELIGIBILITY[case_id] = {
+        "eligible": False,
+        "reason": "Eligibility has not been reviewed yet.",
+    }
+    CERTIFICATES[case_id] = {
+        "present": any("certificate" in document.lower() for document in submitted_documents),
+        "original": False,
+        "certificate_type": f"{program} certificate",
+        "verification_method": "Not checked",
+        "reason": "No certificate was submitted.",
+    }
+    _log("case_created", case_id=case_id, resident_id=resident_id, program=program)
+    return dict(CASES[-1])
 
 
 def get_resident_details(resident_id):

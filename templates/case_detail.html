@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Case #{{ case_id }} | Casework operations</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container detail-page">
+    <a class="back-link" href="/" target="_self">&larr; Back to dashboard</a>
+    <header>
+        <div class="brand-line"><span class="brand-mark">CM</span><span>Casework operations</span></div>
+        <p class="eyebrow">CASE DETAIL</p>
+        <h1 id="pageTitle">Case #{{ case_id }}</h1>
+        <p class="subtitle">Review the evidence gathered by the agent before making a decision.</p>
+    </header>
+
+    <section id="loading" class="card">Loading case evidence...</section>
+    <section id="caseContent" class="hidden">
+        <section class="card">
+            <div id="summary"></div>
+            <div id="checks"></div>
+        </section>
+        <section id="approval"></section>
+    </section>
+</div>
+<script>
+const caseId = "{{ case_id }}";
+
+document.addEventListener("DOMContentLoaded", () => loadCase());
+
+async function loadCase() {
+    const response = await fetch("/api/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({case_id: caseId})
+    });
+    const data = await response.json();
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("caseContent").classList.remove("hidden");
+    if (!response.ok || data.error) {
+        document.getElementById("summary").innerHTML = `<p class="error">${data.error || "Unable to load this case."}</p>`;
+        return;
+    }
+
+    document.getElementById("pageTitle").textContent = `Case #${data.case.case_id}`;
+    document.getElementById("summary").innerHTML = `
+        <div class="summary"><strong>${data.resident.name}</strong><span>${data.case.program} · Current status: ${data.case.status}</span></div>`;
+    document.getElementById("checks").innerHTML = `
+        <h2>Evidence review</h2>
+        <h3>Documents: ${data.documents.submitted}/${data.documents.required} submitted</h3>
+        <ul class="document-list">${data.documents.items.map(document => `
+            <li class="${document.submitted ? "document-submitted" : "document-missing"}">
+                <span>${document.submitted ? "✓" : "!"}</span><strong>${document.name}</strong><small>${document.submitted ? "Submitted" : "Not submitted"}</small>
+            </li>`).join("")}</ul>
+        <p><strong>Eligibility:</strong> ${data.eligibility.eligible ? "Passed" : "Did not pass"}</p>
+        <div class="certificate-check">
+            <p><strong>Certificate:</strong> ${data.certificate.present ? "Submitted" : "Not submitted"}</p>
+            <p><strong>Originality:</strong> ${data.certificate.present ? (data.certificate.original ? "Verified original" : "Could not verify as original") : "Not applicable"}</p>
+            <p><strong>Verification:</strong> ${data.certificate.verification_method}</p>
+            <small>${data.certificate.reason}</small>
+        </div>`;
+
+    const action = data.proposed_action;
+    document.getElementById("approval").innerHTML = `
+        <div class="approval"><span class="warning">HUMAN APPROVAL REQUIRED</span>
+            <h2>Proposed status: ${action.new_status}</h2><p>${action.reason}</p>
+            <button class="approve" onclick="resolveApproval('${action.approval_id}', true)">Approve</button>
+            <button class="reject" onclick="resolveApproval('${action.approval_id}', false)">Reject</button>
+        </div>`;
+}
+
+async function resolveApproval(approvalId, approved) {
+    const response = await fetch("/api/approval", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({approval_id: approvalId, approved})
+    });
+    const data = await response.json();
+    document.getElementById("approval").innerHTML = `<div class="${approved ? "success" : "rejected"}"><strong>${data.message}</strong>${data.result ? `<p>New status: ${data.result.new_status}</p>` : ""}</div>`;
+}
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@
         </p>
         <div class="toolbar">
             <button class="primary" onclick="triageAll()">Run morning triage</button>
+            <button class="secondary" onclick="toggleCreateCase(true)">+ Create case</button>
             <span id="queueStatus" class="queue-status">Ready to review</span>
         </div>
     </header>
@@ -25,6 +26,23 @@
         <button class="tab active" data-tab="overview" onclick="showTab('overview')">Overview</button>
         <button class="tab" data-tab="all-cases" onclick="showTab('all-cases')">All cases</button>
     </nav>
+
+    <div id="createCasePanel" class="modal-backdrop hidden" onclick="closeCreateCaseFromBackdrop(event)">
+    <section class="modal card" role="dialog" aria-modal="true" aria-labelledby="createCaseTitle">
+        <div class="section-heading"><div><p class="eyebrow">NEW RECORD</p><h2 id="createCaseTitle">Create a new case</h2></div><button type="button" class="close-button" onclick="toggleCreateCase(false)" aria-label="Close">×</button></div>
+        <p class="muted">Select a program to load its required fields and documents.</p>
+        <form id="createCaseForm" class="case-form">
+            <label>Resident name<input name="name" required placeholder="Full name"></label>
+            <label>Benefit / program<select name="program" id="programSelect" required onchange="loadRequirements(this.value)"><option value="">Select a program</option>{% for program in programs %}<option value="{{ program }}">{{ program }}</option>{% endfor %}</select></label>
+            <label>Language<input name="language" required value="English"></label>
+            <label>Contact<input name="contact" type="email" required placeholder="resident@example.test"></label>
+            <div id="programFields" class="dynamic-requirements full-width"><p class="muted">Choose a program to see additional case fields.</p></div>
+            <div id="programDocuments" class="dynamic-requirements full-width"><p class="muted">Required documents will appear here.</p></div>
+            <p id="createCaseMessage" class="form-message"></p>
+            <button class="primary" type="submit">Create case and check evidence</button>
+        </form>
+    </section>
+    </div>
 
     <section id="overview" class="tab-panel">
     <section class="metrics" aria-label="Case summary">
@@ -35,24 +53,6 @@
     </section>
 
     <main class="dashboard-grid">
-    <section class="card queue-card">
-        <div class="section-heading">
-            <div><p class="eyebrow">WORK QUEUE</p><h2>Cases needing attention</h2></div>
-            <span id="caseCount" class="count">0 cases</span>
-        </div>
-        <div id="caseGrid" class="case-grid">
-            {% for case in cases %}
-            {% if case.status != 'completed' %}
-            <button class="case" data-case-id="{{ case.case_id }}" onclick="runAgent('{{ case.case_id }}')">
-                <strong>Case #{{ case.case_id }}</strong>
-                <span>{{ case.program }}</span>
-                <small class="case-status">Status: {{ case.status }}</small>
-            </button>
-            {% endif %}
-            {% endfor %}
-        </div>
-    </section>
-
     <section id="result" class="card hidden">
         <div class="section-heading"><div><p class="eyebrow">CASE BRIEF</p><h2>Agent activity</h2></div><span class="live-dot">LIVE</span></div>
         <div id="summary"></div>
@@ -80,20 +80,14 @@
         </section>
     </section>
 
-    <section class="card audit-card">
-        <h2>Audit log</h2>
-        <p class="muted">Every read, recommendation, and human decision is recorded here.</p>
-        <button class="secondary" onclick="loadLogs()">Refresh log</button>
-        <pre id="logs">Click refresh to load events.</pre>
-    </section>
 </div>
 
 <script>
 document.addEventListener("DOMContentLoaded", loadDashboard);
+document.getElementById("createCaseForm").addEventListener("submit", createCase);
 
 async function loadDashboard() {
     await loadCases();
-    loadLogs();
 }
 
 function statusLabel(status) {
@@ -106,14 +100,18 @@ function statusBadge(status) {
 
 function renderCaseRows(cases, targetId, includeAction) {
     document.getElementById(targetId).innerHTML = cases.map(item => `
-        <tr>
+        <tr class="case-row" tabindex="0" onclick="openCase('${item.case_id}')" onkeydown="if (event.key === 'Enter' || event.key === ' ') openCase('${item.case_id}')">
             <td><strong>#${item.case_id}</strong></td>
             <td>${item.resident_name || "-"}</td>
             <td>${item.program}</td>
             <td>${statusBadge(item.status)}</td>
-            ${includeAction ? `<td><button class="table-action" onclick="runAgent('${item.case_id}')">Review</button></td>` : ""}
+            ${includeAction ? `<td><button class="table-action" onclick="event.stopPropagation(); openCase('${item.case_id}')">Review</button></td>` : ""}
         </tr>
     `).join("");
+}
+
+function openCase(caseId) {
+    window.open(`/case/${encodeURIComponent(caseId)}`, "_blank", "noopener");
 }
 
 function updateMetrics(cases) {
@@ -138,6 +136,64 @@ function updateMetrics(cases) {
 function showTab(tabId) {
     document.querySelectorAll(".tab-panel").forEach(panel => panel.classList.toggle("hidden", panel.id !== tabId));
     document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.tab === tabId));
+}
+
+function toggleCreateCase(show) {
+    document.getElementById("createCasePanel").classList.toggle("hidden", !show);
+    if (show) document.querySelector('#createCasePanel input[name="name"]').focus();
+}
+
+function closeCreateCaseFromBackdrop(event) {
+    if (event.target.id === "createCasePanel") toggleCreateCase(false);
+}
+
+async function loadRequirements(program) {
+    const fields = document.getElementById("programFields");
+    const documents = document.getElementById("programDocuments");
+    if (!program) {
+        fields.innerHTML = "<p class=\"muted\">Choose a program to see additional case fields.</p>";
+        documents.innerHTML = "<p class=\"muted\">Required documents will appear here.</p>";
+        return;
+    }
+    const response = await fetch("/api/program-requirements");
+    const requirements = (await response.json())[program];
+    fields.innerHTML = `<h3>Required case fields</h3>${requirements.fields.map(field => `<label>${field}<input name="field_${field}" required></label>`).join("")}`;
+    documents.innerHTML = `<h3>Required documents</h3><p class="muted">Choose a file to mark a document as submitted. Files are represented in this demo by their filename.</p>${requirements.documents.map((document, index) => `<label class="document-upload"><input type="file" data-document="${document}" onchange="markDocument(this)"><span class="upload-name">${document}</span><small class="upload-status">Not submitted</small></label>`).join("")}`;
+}
+
+function markDocument(input) {
+    const row = input.closest(".document-upload");
+    row.classList.toggle("uploaded", Boolean(input.files.length));
+    row.querySelector(".upload-status").textContent = input.files.length ? `Submitted: ${input.files[0].name}` : "Not submitted";
+}
+
+async function createCase(event) {
+    event.preventDefault();
+    const form = event.target;
+    const message = document.getElementById("createCaseMessage");
+    const formData = new FormData(form);
+    const payload = Object.fromEntries(formData.entries());
+    payload.fields = {};
+    form.querySelectorAll('input[name^="field_"]').forEach(input => payload.fields[input.name.slice(6)] = input.value);
+    payload.submitted_documents = [...form.querySelectorAll("input[data-document]")].filter(input => input.files.length).map(input => input.dataset.document);
+    delete payload["program"];
+    payload.program = form.querySelector('[name="program"]').value;
+    message.textContent = "Creating case...";
+    const response = await fetch("/api/cases", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        message.textContent = data.error || "Unable to create case.";
+        message.className = "form-message error";
+        return;
+    }
+    message.className = "form-message success-text";
+    message.textContent = `Case #${data.case_id} created.`;
+    form.reset();
+    form.querySelector('input[name="language"]').value = "English";
+    await loadCases();
+    setQueueStatus(`Case #${data.case_id} ready for review`);
 }
 
 async function runAgent(caseId) {
@@ -233,7 +289,6 @@ async function resolveApproval(approvalId, approved) {
         </div>
     `;
 
-    loadLogs();
     loadCases();
     setQueueStatus(approved ? "Decision recorded" : "Proposal rejected");
 }
@@ -263,34 +318,21 @@ async function triageAll() {
     document.getElementById("result").classList.remove("hidden");
     setQueueStatus(`${data.cases.length} cases checked`);
     loadCases();
-    loadLogs();
 }
 
 async function loadCases() {
     const response = await fetch("/api/cases");
     const cases = await response.json();
     updateMetrics(cases);
-    const openCases = cases.filter(item => item.status !== "completed");
-    document.getElementById("caseCount").textContent = `${openCases.length} cases`;
     document.getElementById("allCaseCount").textContent = `${cases.length} cases`;
     renderCaseRows(cases.slice().reverse().slice(0, 5), "recentCases", false);
     renderCaseRows(cases, "allCases", true);
-    cases.forEach(item => {
-        const card = document.querySelector(`[data-case-id="${item.case_id}"]`);
-        if (card) card.querySelector(".case-status").textContent = `Status: ${item.status}`;
-    });
 }
 
 function setQueueStatus(message) {
     document.getElementById("queueStatus").textContent = message;
 }
 
-async function loadLogs() {
-    const response = await fetch("/api/logs");
-    const logs = await response.json();
-    document.getElementById("logs").textContent =
-        JSON.stringify(logs, null, 2);
-}
 </script>
 </body>
 </html>

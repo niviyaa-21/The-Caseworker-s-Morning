@@ -1,13 +1,13 @@
 from flask import Flask, render_template, request, jsonify
 from agent import CaseworkerAgent
-from tools import CASES, ACTION_LOG, RESIDENTS
+from tools import CASES, ACTION_LOG, RESIDENTS, PROGRAM_REQUIREMENTS, create_case
 
 app = Flask(__name__)
 agent = CaseworkerAgent()
 
 @app.route("/")
 def index():
-    return render_template("index.html", cases=CASES)
+    return render_template("index.html", cases=CASES, programs=PROGRAM_REQUIREMENTS)
 
 @app.get("/api/cases")
 def cases():
@@ -15,6 +15,33 @@ def cases():
         {**case, "resident_name": RESIDENTS.get(case["resident_id"], {}).get("name", "Unknown")}
         for case in CASES
     ])
+
+@app.get("/api/program-requirements")
+def program_requirements():
+    return jsonify(PROGRAM_REQUIREMENTS)
+
+@app.get("/case/<case_id>")
+def case_detail(case_id):
+    return render_template("case_detail.html", case_id=case_id)
+
+@app.post("/api/cases")
+def add_case():
+    data = request.get_json(silent=True) or {}
+    required = ("name", "program", "language", "contact")
+    if any(not isinstance(data.get(field), str) or not data[field].strip() for field in required):
+        return jsonify({"error": "name, program, language, and contact are required"}), 400
+    program = data["program"].strip()
+    if program not in PROGRAM_REQUIREMENTS:
+        return jsonify({"error": "Select a valid benefit program"}), 400
+    fields = data.get("fields", {})
+    submitted_documents = data.get("submitted_documents", [])
+    if not isinstance(fields, dict) or not isinstance(submitted_documents, list):
+        return jsonify({"error": "fields must be an object and submitted_documents must be a list"}), 400
+    allowed_documents = PROGRAM_REQUIREMENTS[program]["documents"]
+    if any(document not in allowed_documents for document in submitted_documents):
+        return jsonify({"error": "One or more submitted documents are not required for this program"}), 400
+    case = create_case(*(data[field].strip() for field in required), fields, submitted_documents)
+    return jsonify(case), 201
 
 @app.post("/api/run")
 def run_agent():

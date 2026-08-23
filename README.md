@@ -25,10 +25,14 @@ This project implements:
 3. **Risk-aware execution** – read-only actions happen automatically.
 4. **Human approval** – changing a case status requires explicit approval.
 5. **Audit logging** – important actions are recorded.
-6. **Simple dashboard** – a caseworker can run the agent and approve/reject the proposed action.
+6. **Operations dashboard** – the overview shows total, pending, needs-attention, and completed case counts, a completion chart, recent cases, and the audit log.
 7. **Morning triage** – run read-only checks across the whole pending queue and sort findings by priority.
 8. **Live queue state** – the dashboard updates case status and exposes pending approval requests through the API.
 9. **Certificate verification** – each case is checked for certificate presence and whether its issuing reference appears original.
+10. **All-cases register** – a separate dashboard tab lists every case with its resident, program, status, and review action.
+11. **Dedicated case view** – selecting a case opens its evidence and approval workflow in a new browser tab.
+12. **Case creation** – authorized dashboard users can create a pending case from a modal, select a benefit program, complete program-specific fields, and mark documents as submitted.
+13. **Program requirements** – a predefined requirements registry determines the fields and documents shown for each benefit program.
 
 > This is a demonstration system using mock data. It is not suitable for real benefits decisions or production use.
 
@@ -247,6 +251,24 @@ Certificate results include `present`, `original`, `verification_method`, and an
 GET /api/cases
 GET /api/approvals
 ```
+
+### Create a case
+
+```http
+POST /api/cases
+Content-Type: application/json
+
+{
+      "name": "Sam Taylor",
+      "program": "Transport Assistance",
+      "language": "English",
+      "contact": "sam@example.test"
+}
+```
+
+New cases begin with `pending` status and no submitted documents or verified certificate.
+
+The dashboard Create case modal loads requirements from `GET /api/program-requirements`. Selecting a file marks that document as submitted in this demo; production deployments should replace that behavior with secure file storage and document scanning.
 
 Approval payloads must contain a real JSON boolean for `approved`; invalid requests are rejected with `400`.
 
